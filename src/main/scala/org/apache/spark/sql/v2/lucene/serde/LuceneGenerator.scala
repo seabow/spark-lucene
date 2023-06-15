@@ -1,5 +1,6 @@
 package org.apache.spark.sql.v2.lucene.serde
 
+import io.github.seabow.spark.v2.lucene.LuceneOptions
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.lucene.analysis.standard.StandardAnalyzer
@@ -14,8 +15,7 @@ import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
 import org.apache.spark.sql.connector.catalog.CatalogV2Implicits.NamespaceHelper
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.v2.lucene.serde.avro.StoreFieldAvroWriter
-import org.seabow.HdfsDirectory
-import org.seabow.spark.v2.lucene.LuceneOptions
+import io.github.seabow.HdfsDirectory
 
 class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Configuration, val options: LuceneOptions) {
   val dirPath=s"$path.dir"

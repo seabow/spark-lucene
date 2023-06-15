@@ -1,5 +1,6 @@
 package org.apache.spark.sql.v2.lucene
 
+import io.github.seabow.spark.v2.lucene.LucenePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{BlockLocation, FileStatus, LocatedFileStatus}
 import org.apache.spark.cache.LuceneSearcherCache
@@ -14,7 +15,6 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.v3.evolving.expressions.aggregate.Aggregation
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.util.SerializableConfiguration
-import org.seabow.spark.v2.lucene.LucenePartitionReaderFactory
 
 import java.util.Locale
 

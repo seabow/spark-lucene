@@ -1,11 +1,11 @@
 package org.apache.spark.sql.v2.lucene.util
 
+import io.github.seabow.spark.v2.lucene.collector.{AggCollector, FacetAggCollector}
 import org.apache.hadoop.conf.Configuration
 import org.apache.lucene.search.{IndexSearcher, Query}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.v3.evolving.expressions.aggregate.Aggregation
-import org.seabow.spark.v2.lucene.collector.{AggCollector, FacetAggCollector}
 
 import scala.collection.mutable
 

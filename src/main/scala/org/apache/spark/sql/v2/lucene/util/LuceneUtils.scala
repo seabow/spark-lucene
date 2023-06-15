@@ -1,9 +1,9 @@
 package org.apache.spark.sql.v2.lucene.util
 
+import io.github.seabow.spark.v2.lucene.LuceneOptions
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types._
-import org.seabow.spark.v2.lucene.LuceneOptions
 
 object LuceneUtils {
   def inferSchema(sparkSession: SparkSession, files: Seq[FileStatus], options: Map[String, String])

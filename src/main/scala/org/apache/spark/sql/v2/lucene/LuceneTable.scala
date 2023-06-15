@@ -1,5 +1,6 @@
 package org.apache.spark.sql.v2.lucene
 
+import io.github.seabow.spark.v2.lucene.LuceneScanBuilder
 import scala.collection.JavaConverters._
 import org.apache.hadoop.fs.FileStatus
 import org.apache.spark.sql.SparkSession
@@ -10,7 +11,6 @@ import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.v2.lucene.util.LuceneUtils
-import org.seabow.spark.v2.lucene.LuceneScanBuilder
 
 case class LuceneTable(
                         name: String,

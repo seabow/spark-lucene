@@ -4,12 +4,12 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.arlixu</groupId>
-    <artifactId>lucene-hadoop</artifactId>
-    <version>0.1.2</version>
+    <groupId>io.github.seabow</groupId>
+    <artifactId>spark-lucene</artifactId>
+    <version>0.1.0</version>
     <name>${project.artifactId}</name>
     <description>A Lucene Datasource of Spark.Supports push down filter and push down aggeragation</description>
-    <url>https://github.com/arlixu/lucene-hadoop</url>
+    <url>https://github.com/seabow/spark-lucene</url>
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
@@ -32,14 +32,14 @@
     </licenses>
 
     <scm>
-        <connection>scm:git:git@github.com:arlixu/lucene-hadoop.git</connection>
-        <developerConnection>scm:git:git@github.com:arlixu/lucene-hadoop.git</developerConnection>
-        <url>git@github.com:arlixu/lucene-hadoop.git</url>
+        <connection>scm:git:git@github.com:seabow/spark-lucene.git</connection>
+        <developerConnection>scm:git:git@github.com:seabow/spark-lucene.git</developerConnection>
+        <url>git@github.com:seabow/spark-lucene.git</url>
     </scm>
 
     <issueManagement>
         <system>Github Issue</system>
-        <url>https://github.com/arlixu/lucene-hadoop/issues</url>
+        <url>https://github.com/seabow/spark-lucene/issues</url>
     </issueManagement>
 
     <!-- developers -->
@@ -171,35 +171,6 @@
                         <goals>
                             <goal>shade</goal>
                         </goals>
-                        <configuration>
-                            <relocations>
-                                <relocation>
-                                    <pattern>com.google.protobuf</pattern>
-                                    <shadedPattern>shaded.protobuf</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>com.google.common</pattern>
-                                    <shadedPattern>shaded.com.google.common</shadedPattern>
-                                </relocation>
-                            </relocations>
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
-                            <transformers>
-                                <transformer
-                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <!-- 主类的全限定名 -->
-                                    <mainClass></mainClass>
-                                </transformer>
-                            </transformers>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -216,9 +187,6 @@
                             <goal>compile</goal>
                         </goals>
                         <configuration>
-                            <excludes>
-                                <exclude>**/application.conf</exclude>
-                            </excludes>
                             <includes>
                                 <include>**/*.scala</include>
                                 <include>**/*.java</include>

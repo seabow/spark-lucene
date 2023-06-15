@@ -8,7 +8,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.ExecutorCacheTaskLocation
 import org.apache.spark.sql.SparkSession
-import org.seabow.HdfsDirectoryFactory
+import io.github.seabow.HdfsDirectoryFactory
 
 import java.net.URI
 import scala.collection.mutable
