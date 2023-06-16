@@ -2,7 +2,7 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-spark_lucene
+benckmark_base_dir
 
 ### IntelliJ IDEA ###
 *.iws
