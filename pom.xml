@@ -143,12 +143,6 @@
             <version>0.62.2</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>com.storm-enroute</groupId>
-            <artifactId>scalameter_2.12</artifactId>
-            <version>0.19</version>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
     <build>
         <pluginManagement>
@@ -218,6 +212,9 @@
                         <goals>
                             <goal>doc-jar</goal>
                         </goals>
+                        <configuration>
+                            <failOnError>false</failOnError>
+                        </configuration>
                     </execution>
                 </executions>
                 <configuration>
