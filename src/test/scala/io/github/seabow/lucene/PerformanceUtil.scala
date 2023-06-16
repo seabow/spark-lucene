@@ -1,18 +1,21 @@
 package io.github.seabow.lucene
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.FileSystem
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.lucene._
-import org.scalatest.BeforeAndAfterAll
-import org.scalatest.funsuite.AnyFunSuite
+import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.{col, rand, udf}
 
 import scala.util.Random
 
-class RandomTestDataGenerator extends AnyFunSuite with SparkSessionTestWrapper with BeforeAndAfterAll{
-  val outputFilePath = "random_data_orc"
-  val hdfs=FileSystem.get(new Configuration)
-  def generateRandom(numRecords:Int=1000000):Unit={
+object PerformanceUtil extends SparkSessionTestWrapper {
+  val  fs= FileSystem.get(new Configuration)
+  val outputFilePath = "benckmark_base_dir"
+  def generateRandom(numRecords:Int=1000000,mode:String="create"):Unit={
+    val finalOutputDir=outputFilePath+"/"+numRecords
+    mode match {
+      case "create" if(fs.exists(new Path(finalOutputDir))) => return
+      case _=>
+    }
     // 创建Spark会话
     // 定义数据量和保存路径
     // 定义标签体系
@@ -53,56 +56,20 @@ class RandomTestDataGenerator extends AnyFunSuite with SparkSessionTestWrapper w
     val dfWithMapTags = dfWithAttributes.withColumn("map_tags", generateMapTagsUDF())
     dfWithMapTags.show(false)
     // 保存为ORC文件
-    dfWithMapTags.write.mode("overwrite").orc(outputFilePath)
+    dfWithMapTags.write.mode("overwrite").orc(finalOutputDir)
   }
 
-  override def beforeAll(){
-//    generateRandom()
+  def getPath(numRecords:Int,format:String=""):String ={
+     s"benckmark_base_dir/$format$numRecords"
   }
 
-
-  test("write orc/lucene compared"){
-    var startTime = System.currentTimeMillis
-    spark.read.orc(outputFilePath).write.mode("overwrite").orc("compared_orc")
-    var endTime = System.currentTimeMillis
-    var cost=(endTime-startTime)/1000
-    println("cost secs orc write:"+cost)
-    startTime = System.currentTimeMillis
-    spark.read.orc(outputFilePath).write.mode("overwrite").lucene("compared_lucene")
-    endTime = System.currentTimeMillis
-    cost=(endTime-startTime)/1000
-    println("cost secs lucene write:"+cost)
-
+  def write(numRecords:Int,format: String):Unit = {
+    spark.read.orc(getPath(numRecords)
+    ).write.format(format).mode("overwrite").save(getPath(numRecords,format))
   }
 
-  test("read from orc/lucene"){
-    val condition="array_contains(map_tags.`sports`,'basketball')"
-//    val condition="map_tags['sports'] is not null"
-    var startTime = System.currentTimeMillis
-    spark.read.orc("compared_orc").filter(condition).count()
-    var endTime = System.currentTimeMillis
-    var cost=(endTime-startTime)/1000
-    println("cost secs orc read:"+cost)
-    startTime = System.currentTimeMillis
-    spark.read.lucene("compared_lucene").filter(condition).count()
-    endTime = System.currentTimeMillis
-    cost=(endTime-startTime)/1000
-    println("cost secs lucene read:"+cost)
-  }
-
-  test("facet from orc/lucene"){
-    val condition="array_contains(map_tags.`sports`,'basketball')"
-//        val condition="map_tags['sports'] is not null"
-    var startTime = System.currentTimeMillis
-    spark.read.orc("compared_orc").filter(condition).selectExpr("map_tags.`art` as art").withColumn("art",explode_outer(col("art"))).groupBy("art").count().show
-    var endTime = System.currentTimeMillis
-    var cost=(endTime-startTime)/1000
-    println("cost secs orc read:"+cost)
-    startTime = System.currentTimeMillis
-    spark.read.option("enforceFacetSchema","true").lucene("compared_lucene").filter("map_tags.`sports`='basketball'").groupBy("map_tags.`art`").count().show
-    endTime = System.currentTimeMillis
-    cost=(endTime-startTime)/1000
-    println("cost secs lucene read:"+cost)
+  def read(numRecords:Int,format: String):DataFrame = {
+    spark.read.format(format).load(getPath(numRecords,format))
   }
 
 }
