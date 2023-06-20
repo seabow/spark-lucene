@@ -154,8 +154,7 @@ class SimpleReadAndWriteTest extends AnyFunSuite with Logging with SparkSessionT
 
   override def afterAll(): Unit ={
     println("afterAll")
-    clearData
-
+//    clearData
   }
 
 }

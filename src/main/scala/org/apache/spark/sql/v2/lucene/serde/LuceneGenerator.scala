@@ -60,58 +60,59 @@ class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Co
   private val valueConverters: Array[ValueConverter] = dataSchema.map(makeConverter(_)).toArray
 
 
-  private def makeConverter(structField: StructField): ValueConverter = {
+  private def makeConverter(structField: StructField,isMulti:Boolean=false): ValueConverter = {
     structField.dataType match {
     case BooleanType=>
         (row: SpecializedGetters, ordinal: Int, doc: Document) => {
           val intValue= if(row.getBoolean(ordinal)) 1 else 0
           doc.add(new IntPoint(structField.name, row.getInt(ordinal)))
-          doc.add(new SortedNumericDocValuesField(structField.name,intValue))
+          val docValue=if(!isMulti) new NumericDocValuesField(structField.name,intValue)
+           else new SortedNumericDocValuesField(structField.name,intValue)
+          doc.add(docValue)
         }
-    case IntegerType =>
+    case IntegerType|DateType =>
       (row: SpecializedGetters, ordinal: Int, doc: Document) => {
         doc.add(new IntPoint(structField.name, row.getInt(ordinal)))
-        doc.add(new SortedNumericDocValuesField(structField.name, row.getInt(ordinal).toLong))
+        val docValue=if(!isMulti) new NumericDocValuesField(structField.name, row.getInt(ordinal).toLong)
+         else new SortedNumericDocValuesField(structField.name,row.getInt(ordinal).toLong)
+        doc.add(docValue)
       }
-    case LongType =>
+    case LongType|TimestampType =>
       (row: SpecializedGetters, ordinal: Int, doc: Document) => {
         doc.add(new LongPoint(structField.name, row.getLong(ordinal)))
-        doc.add(new SortedNumericDocValuesField(structField.name, row.getLong(ordinal)))
+        val docValue=if(!isMulti) new NumericDocValuesField(structField.name,row.getLong(ordinal))
+        else new SortedNumericDocValuesField(structField.name,row.getLong(ordinal))
+        doc.add(docValue)
       }
     case FloatType =>
       (row: SpecializedGetters, ordinal: Int, doc: Document) => {
         doc.add(new FloatPoint(structField.name, row.getFloat(ordinal)))
-        doc.add(new SortedNumericDocValuesField(structField.name, NumericUtils.floatToSortableInt( row.getFloat(ordinal))))
+        val docValue=if(!isMulti) new NumericDocValuesField(structField.name, NumericUtils.floatToSortableInt( row.getFloat(ordinal)))
+        else new SortedNumericDocValuesField(structField.name, NumericUtils.floatToSortableInt( row.getFloat(ordinal)))
+        doc.add(docValue)
       }
     case DoubleType =>
       (row: SpecializedGetters, ordinal: Int, doc: Document) => {
         doc.add(new DoublePoint(structField.name, row.getDouble(ordinal)))
-        doc.add(new SortedNumericDocValuesField(structField.name, NumericUtils.doubleToSortableLong(row.getDouble(ordinal))))
+        val docValue=if(!isMulti) new NumericDocValuesField(structField.name, NumericUtils.doubleToSortableLong(row.getDouble(ordinal)))
+        else new SortedNumericDocValuesField(structField.name, NumericUtils.doubleToSortableLong(row.getDouble(ordinal)))
+        doc.add(docValue)
       }
     case StringType =>
       (row: SpecializedGetters, ordinal: Int, doc: Document) => {
         doc.add(new StringField(structField.name, row. getUTF8String(ordinal).toString, Field.Store.NO))
-        doc.add(new SortedSetDocValuesField(structField.name, new BytesRef(row.getUTF8String(ordinal).toString)))
-      }
-    case DateType =>
-      (row: SpecializedGetters, ordinal: Int, doc: Document) => {
-        val days=row.getInt(ordinal)
-        doc.add(new IntPoint(structField.name, days))
-        doc.add(new SortedNumericDocValuesField(structField.name, days.toLong))
-      }
-    case TimestampType =>
-      (row: SpecializedGetters, ordinal: Int, doc: Document) => {
-        val timestamp=row.getLong(ordinal)
-        doc.add(new LongPoint(structField.name, timestamp))
-        doc.add(new SortedNumericDocValuesField(structField.name, timestamp))
+        val docValue=if(!isMulti) new BinaryDocValuesField(structField.name, new BytesRef(row.getUTF8String(ordinal).toString))
+        else new SortedSetDocValuesField(structField.name, new BytesRef(row.getUTF8String(ordinal).toString))
+        doc.add(docValue)
       }
     case ArrayType(elementType, _) => (row: SpecializedGetters, ordinal: Int, doc: Document)  =>{
       // Need to put all converted values to a list, can't reuse object.
       val array = row.getArray(ordinal)
+      doc.add(new NumericDocValuesField(structField.name, array.numElements()))
       var i = 0
       while (i < array.numElements()) {
         if (!array.isNullAt(i)) {
-          val elementConverter = makeConverter(StructField(structField.name, elementType, nullable = true))
+          val elementConverter = makeConverter(StructField(s"${structField.name}[$i]", elementType, nullable = true))
           elementConverter(array, i, doc)
           }
         i += 1
@@ -124,8 +125,10 @@ class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Co
       val keys =map.keyArray()
       val values = map.valueArray()
       var i = 0
+      val keyConverter=makeConverter(StructField(structField.name,keyType,nullable = true),true)
       while (i < length) {
         val key=keys.get(i,keyType)
+        keyConverter(keys,i,doc)
         if(!values.isNullAt(i)){
           val kName=Array(structField.name,key.toString).quoted
          val kvConverter= makeConverter(StructField(kName, valueType, nullable = true))
@@ -137,6 +140,7 @@ class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Co
     }
     case st: StructType =>  (row: SpecializedGetters, ordinal: Int, doc: Document) =>{
       val struct= row.getStruct(ordinal,st.size)
+      doc.add(new BinaryDocValuesField(structField.name,new BytesRef("1")))
       val numFields = st.length
       var i = 0
       while (i < numFields) {
@@ -156,7 +160,8 @@ class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Co
 
   def write(row: InternalRow): Unit = {
     val doc = new Document
-    doc.add(new StoredField("_source",new BytesRef(storeFieldAvroWriter.getAndReset(row))))
+    //TODO 使用docValues代替StoredField。
+//    doc.add(new StoredField("_source",new BytesRef(storeFieldAvroWriter.getAndReset(row))))
     for (idx <- 0 until row.numFields) {
       if (!row.isNullAt(idx)) {
         valueConverters(idx)(row, idx, doc)

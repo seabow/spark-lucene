@@ -25,7 +25,6 @@ import org.apache.spark.cache.LuceneSearcherCache
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.{FileFormat, OutputWriter, OutputWriterFactory, PartitionedFile}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.v2.lucene.LuceneFilters
@@ -91,7 +90,7 @@ class LuceneFileFormat extends FileFormat with DataSourceRegister {
       val conf = broadcastedConf.value.value
       val searcher = LuceneSearcherCache.getSearcherInstance(file.filePath, conf,luceneCacheAccumulator)
       val query = LuceneFilters.createFilter(dataSchema, filters)
-      val deserializer = new LuceneDeserializer(dataSchema, requiredSchema, SQLConf.get.getConf(SQLConf.SESSION_LOCAL_TIMEZONE))
+      val deserializer = new LuceneDeserializer(dataSchema, requiredSchema,searcher.getIndexReader)
       var currentPage = 1
       var pagingCollector = new PagingCollector(currentPage, Int.MaxValue)
       searcher.search(query, pagingCollector)

@@ -7,16 +7,18 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.cache.{LuceneCacheAccumulator, LuceneSearcherCache}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.SpecificInternalRow
-import org.apache.spark.sql.connector.read.PartitionReader
+import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader}
+import org.apache.spark.sql.execution.WholeStageCodegenExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, PartitionReaderWithPartitionValues}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.v2.lucene.LuceneFilters
-import org.apache.spark.sql.v2.lucene.serde.LuceneDeserializer
+import org.apache.spark.sql.v2.lucene.serde.{DocValuesColumnarBatchReader, LuceneDeserializer}
 import org.apache.spark.sql.v2.lucene.util.LuceneAggUtils
 import org.apache.spark.sql.v3.evolving.expressions.aggregate.Aggregation
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.SerializableConfiguration
 
@@ -27,6 +29,11 @@ case class LucenePartitionReaderFactory(
       readDataSchema: StructType,
       partitionSchema: StructType,
       filters: Array[Filter],aggregation: Option[Aggregation],luceneCacheAccumulator:LuceneCacheAccumulator) extends FilePartitionReaderFactory{
+
+  private val resultSchema = StructType(readDataSchema.fields ++ partitionSchema.fields)
+  private val enableOffHeapColumnVector = sqlConf.offHeapColumnVectorEnabled
+
+
   override def buildReader(file: PartitionedFile): PartitionReader[InternalRow] = {
     val conf=broadcastedConf.value.value
     if(aggregation.nonEmpty){
@@ -36,7 +43,7 @@ case class LucenePartitionReaderFactory(
    val searcher=LuceneSearcherCache.getSearcherInstance(file.filePath,conf,luceneCacheAccumulator)
     val query = LuceneFilters.createFilter(dataSchema,filters)
 
-    val deserializer=new LuceneDeserializer(dataSchema,readDataSchema,SQLConf.get.getConf(SQLConf.SESSION_LOCAL_TIMEZONE))
+    val deserializer=new LuceneDeserializer(dataSchema,readDataSchema,searcher.getIndexReader)
 
     val fileReader= new PartitionReader[InternalRow] {
       var currentPage=1
@@ -117,5 +124,35 @@ case class LucenePartitionReaderFactory(
       }
     }
     fileReader
+  }
+
+  override def supportColumnarReads(partition: InputPartition): Boolean = {
+      sqlConf.wholeStageEnabled &&
+      !WholeStageCodegenExec.isTooManyFields(sqlConf, resultSchema) &&
+      aggregation.isEmpty
+  }
+
+  override def buildColumnarReader(partitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
+    val conf=broadcastedConf.value.value
+    val searcher=LuceneSearcherCache.getSearcherInstance(partitionedFile.filePath,conf,luceneCacheAccumulator)
+    val query = LuceneFilters.createFilter(dataSchema,filters)
+    new PartitionReader[ColumnarBatch] {
+      var currentPage=1
+      var pagingCollector=new PagingCollector(currentPage,Int.MaxValue)
+      searcher.search(query,pagingCollector)
+      val docs= pagingCollector.docs
+      val vectorizedReader=new DocValuesColumnarBatchReader(
+        enableOffHeapColumnVector,
+        searcher.getIndexReader,docs.toArray,
+        readDataSchema,
+        partitionSchema,
+        partitionedFile.partitionValues, capacity = 30000)
+      override def next(): Boolean = vectorizedReader.nextBatch()
+
+      override def get(): ColumnarBatch =
+        vectorizedReader.columnarBatch
+
+      override def close(): Unit = vectorizedReader.columnarBatch.close()
+    }
   }
 }
