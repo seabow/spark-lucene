@@ -101,8 +101,8 @@ class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Co
     case StringType =>
       (row: SpecializedGetters, ordinal: Int, doc: Document) => {
         doc.add(new StringField(structField.name, row. getUTF8String(ordinal).toString, Field.Store.NO))
-        val docValue=if(!isMulti) new BinaryDocValuesField(structField.name, new BytesRef(row.getUTF8String(ordinal).toString))
-        else new SortedSetDocValuesField(structField.name, new BytesRef(row.getUTF8String(ordinal).toString))
+        val docValue=if(!isMulti) new BinaryDocValuesField(structField.name, new BytesRef(row.getUTF8String(ordinal).getBytes))
+        else new SortedSetDocValuesField(structField.name, new BytesRef(row.getUTF8String(ordinal).getBytes))
         doc.add(docValue)
       }
     case ArrayType(elementType, _) => (row: SpecializedGetters, ordinal: Int, doc: Document)  =>{
@@ -126,6 +126,7 @@ class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Co
       val values = map.valueArray()
       var i = 0
       val keyConverter=makeConverter(StructField(structField.name,keyType,nullable = true),true)
+      doc.add(new NumericDocValuesField(Array(structField.name,"size").quoted,length))
       while (i < length) {
         val key=keys.get(i,keyType)
         keyConverter(keys,i,doc)

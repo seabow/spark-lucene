@@ -5,6 +5,7 @@ import org.apache.lucene.util.NumericUtils
 import org.apache.spark.sql.connector.catalog.CatalogV2Implicits._
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
 
 import scala.collection.mutable
 
@@ -159,7 +160,9 @@ class StringReader extends DocValuesColumnarVectorReader {
     }
     val binaryDocValues = binaryDocValuesMap(name)
     val value = if (binaryDocValues!=null && binaryDocValues.advanceExact(docId)) {
-      Some(convert(binaryDocValues.binaryValue().bytes))
+      val bytes=binaryDocValues.binaryValue().utf8ToString().getBytes
+      println("bytes string:"+UTF8String.fromBytes(bytes))
+      Some(bytes)
     } else {
       None
     }
@@ -185,7 +188,7 @@ class StructReader(structType: StructType, childConverters: Array[DocValuesColum
       if (binaryDocValues!=null && binaryDocValues.advanceExact(batchDocIds(i))) {
         vector.appendStruct(false)
         for (j <- 0 until childConverters.length) {
-          childConverters(j).readBatch(indexReader, Array(batchDocIds(i)), Array(name, structType(i).name).quoted, vector.getChild(j))
+          childConverters(j).readBatch(indexReader, Array(batchDocIds(i)), Array(name, structType(j).name).quoted, vector.getChild(j))
         }
       } else {
         vector.appendStruct(true)
@@ -205,12 +208,28 @@ class MapKeyReader(childReader: DocValuesColumnarVectorReader) extends DocValues
   override def append(value: Any, vector: WritableColumnVector): Unit = {
     childReader.append(value, vector)
   }
+  def getKeyString(value: Any): String ={
+    value.toString
+  }
 }
 
 class StringMapKeyReader(childReader: DocValuesColumnarVectorReader) extends MapKeyReader(childReader) {
   var sortedSetDocValuesMap: mutable.Map[String, SortedSetDocValues] = mutable.Map.empty
+  var numericDocValuesMap: mutable.Map[String,NumericDocValues]=mutable.Map.empty
 
   override def getValue(indexReader: IndexReader, docId: Int, name: String): Option[Any] = {
+    val sizeFieldName=Array(name,"size").quoted
+    if(!numericDocValuesMap.contains(sizeFieldName))
+      {
+        numericDocValuesMap.put(sizeFieldName,MultiDocValues.getNumericValues(indexReader, sizeFieldName))
+      }
+      val sizeDocValues=numericDocValuesMap(sizeFieldName)
+    if(sizeDocValues==null || !sizeDocValues.advanceExact(docId)){
+      return None
+    }else if(sizeDocValues.longValue()==0){
+      return Some(Seq.empty)
+    }
+
     if (!sortedSetDocValuesMap.contains(name)) {
       sortedSetDocValuesMap.put(name, MultiDocValues.getSortedSetValues(indexReader, name))
     }
@@ -218,11 +237,16 @@ class StringMapKeyReader(childReader: DocValuesColumnarVectorReader) extends Map
     if (sortedSetDocValues!=null && sortedSetDocValues.advanceExact(docId)) {
       val collection = Iterator.continually(sortedSetDocValues.nextOrd())
         .takeWhile(_ != SortedSetDocValues.NO_MORE_ORDS)
-        .map(ordinal => sortedSetDocValues.lookupOrd(ordinal).bytes)
-      Some(collection.toSeq)
+        .map { ordinal =>
+         sortedSetDocValues.lookupOrd(ordinal).utf8ToString().getBytes
+        }.toSeq
+      Some(collection)
     } else {
       None
     }
+  }
+  override def getKeyString(value: Any): String ={
+      UTF8String.fromBytes(value.asInstanceOf[Array[Byte]]).toString
   }
 }
 
@@ -257,8 +281,10 @@ class MapReader(keyReader: MapKeyReader, valueReader: DocValuesColumnarVectorRea
         vector.appendArray(size)
         keySeq.foreach {
           key =>
+            val keyString=keyReader.getKeyString(key)
+            println("keyString:"+keyString)
             keyReader.append(key, keysVector)
-            valueReader.readBatch(indexReader, Array(batchDocIds(i)), Array(name, key.toString).quoted, valuesVector)
+            valueReader.readBatch(indexReader, Array(batchDocIds(i)), Array(name, keyString).quoted, valuesVector)
         }
       } else {
         vector.appendNull()

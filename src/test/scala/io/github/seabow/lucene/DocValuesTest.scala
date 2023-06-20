@@ -1,10 +1,12 @@
 package io.github.seabow.lucene
 
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
-import org.apache.lucene.document.{Document, NumericDocValuesField}
+import org.apache.lucene.document.{BinaryDocValuesField, Document, NumericDocValuesField}
 import org.apache.lucene.index._
 import org.apache.lucene.search.{IndexSearcher, MatchAllDocsQuery}
 import org.apache.lucene.store.RAMDirectory
+import org.apache.lucene.util.BytesRef
+import org.apache.spark.unsafe.types.UTF8String
 
 object DocValuesExample {
   def main(args: Array[String]): Unit = {
@@ -16,7 +18,7 @@ object DocValuesExample {
     val writer = new IndexWriter(directory, config)
 
     // 创建自定义无序多值的DocValues字段
-    val field1 = new NumericDocValuesField("myField1",1)
+    val field1 = new BinaryDocValuesField("myField1",new BytesRef("Phạm Uyển Trinh"))
     val field2 = new NumericDocValuesField("myField2", 2)
     val field3 = new NumericDocValuesField("myField3", 3)
     val field4 = new NumericDocValuesField("myField4", 4)
@@ -41,11 +43,11 @@ object DocValuesExample {
     val topDocs = searcher.search(new MatchAllDocsQuery,1)
     // 遍历结果并输出顺序
     // 关闭读取器和存储
-   val docValues= MultiDocValues.getNumericValues(reader,"myField2")
+   val docValues= MultiDocValues.getBinaryValues(reader,"myField1")
     topDocs.scoreDocs.foreach{
       doc=>
         if(docValues.advanceExact(doc.doc)){
-          println(docValues.longValue())
+          println(UTF8String.fromBytes(docValues.binaryValue().bytes))
         }
     }
     directory.close()
