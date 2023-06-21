@@ -73,7 +73,6 @@ abstract class NumericValuesReader extends DocValuesColumnarVectorReader {
     val numericDocValues = numericDocValuesMap(name)
     val value = if (numericDocValues!=null && numericDocValues.advanceExact(docId)) {
       val longValue=numericDocValues.longValue()
-      println("value: " + longValue)
       Some(convert(longValue))
     } else {
       None
@@ -295,7 +294,6 @@ class MapReader(keyReader: DocValuesColumnarVectorReader, valueReader: DocValues
         keySeq.foreach {
           key =>
             val keyString=key.toString
-            println("keyString:"+keyString)
             keyReader.append(key, keysVector)
             valueReader.readBatch(indexReader, Array(batchDocIds(i)), Array(name, keyString).quoted, valuesVector)
         }

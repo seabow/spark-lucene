@@ -54,8 +54,6 @@ class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Co
 
   def write(row: InternalRow): Unit = {
     val doc = new Document
-    //TODO 使用docValues代替StoredField。
-//    doc.add(new StoredField("_source",new BytesRef(storeFieldAvroWriter.getAndReset(row))))
     for (idx <- 0 until row.numFields) {
       if (!row.isNullAt(idx)) {
         converters(idx).append(row,idx,dataSchema(idx).name,doc)
