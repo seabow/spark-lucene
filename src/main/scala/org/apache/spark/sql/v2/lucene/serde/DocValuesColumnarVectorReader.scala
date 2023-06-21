@@ -25,7 +25,7 @@ object DocValuesColumnarVectorReader {
       case StringType=>
         new StringReader
       case MapType(keyType, valueType, _) =>
-        new MapReader(new MapKeyReader(makeReader(keyType)).apply(), makeReader(valueType))
+        new MapReader(MapKeyReader(makeReader(keyType)), makeReader(valueType))
       case st:StructType=>
         new StructReader(st,st.fields.map(f=>makeReader(f.dataType)))
       case ArrayType(elementType,_)=>
@@ -197,14 +197,16 @@ class StructReader(structType: StructType, childConverters: Array[DocValuesColum
   }
 }
 
-class MapKeyReader(childReader: DocValuesColumnarVectorReader) extends DocValuesColumnarVectorReader {
-  def apply(): MapKeyReader = childReader match {
+object MapKeyReader{
+  def apply(childReader: DocValuesColumnarVectorReader): MapKeyReaderBase = childReader match {
     case numerReader: NumericValuesReader =>
       new NumericMapKeyReader(numerReader)
     case stringReader: StringReader =>
       new StringMapKeyReader(stringReader)
   }
+}
 
+class MapKeyReaderBase(childReader: DocValuesColumnarVectorReader) extends DocValuesColumnarVectorReader {
   override def append(value: Any, vector: WritableColumnVector): Unit = {
     childReader.append(value, vector)
   }
@@ -213,12 +215,12 @@ class MapKeyReader(childReader: DocValuesColumnarVectorReader) extends DocValues
   }
 }
 
-class StringMapKeyReader(childReader: DocValuesColumnarVectorReader) extends MapKeyReader(childReader) {
+class StringMapKeyReader(childReader: DocValuesColumnarVectorReader) extends MapKeyReaderBase(childReader) {
   var sortedSetDocValuesMap: mutable.Map[String, SortedSetDocValues] = mutable.Map.empty
   var numericDocValuesMap: mutable.Map[String,NumericDocValues]=mutable.Map.empty
 
   override def getValue(indexReader: IndexReader, docId: Int, name: String): Option[Any] = {
-    val sizeFieldName=Array(name,"size").quoted
+    val sizeFieldName=Array(name,"`size`").quoted
     if(!numericDocValuesMap.contains(sizeFieldName))
       {
         numericDocValuesMap.put(sizeFieldName,MultiDocValues.getNumericValues(indexReader, sizeFieldName))
@@ -250,7 +252,7 @@ class StringMapKeyReader(childReader: DocValuesColumnarVectorReader) extends Map
   }
 }
 
-class NumericMapKeyReader(childReader: DocValuesColumnarVectorReader) extends MapKeyReader(childReader) {
+class NumericMapKeyReader(childReader: DocValuesColumnarVectorReader) extends MapKeyReaderBase(childReader) {
   var sortedNumericDocValuesMap: mutable.Map[String, SortedNumericDocValues] = mutable.Map.empty
 
   override def getValue(indexReader: IndexReader, docId: Int, name: String): Option[Any] = {
@@ -269,7 +271,7 @@ class NumericMapKeyReader(childReader: DocValuesColumnarVectorReader) extends Ma
   }
 }
 
-class MapReader(keyReader: MapKeyReader, valueReader: DocValuesColumnarVectorReader) extends DocValuesColumnarVectorReader {
+class MapReader(keyReader: MapKeyReaderBase, valueReader: DocValuesColumnarVectorReader) extends DocValuesColumnarVectorReader {
   override def readBatch(indexReader: IndexReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
     val keysVector = vector.getChild(0)
     val valuesVector = vector.getChild(1)
@@ -298,10 +300,11 @@ class MapReader(keyReader: MapKeyReader, valueReader: DocValuesColumnarVectorRea
 class ArrayReader(elementReader:DocValuesColumnarVectorReader) extends DocValuesColumnarVectorReader{
   var numericDocValuesMap: mutable.Map[String, NumericDocValues] = mutable.Map.empty
   override def readBatch(indexReader: IndexReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
-    if(!numericDocValuesMap.contains(name)){
-       numericDocValuesMap.put(name,MultiDocValues.getNumericValues(indexReader, name))
+    val size=Array(name,"`size`").quoted
+    if(!numericDocValuesMap.contains(size)){
+       numericDocValuesMap.put(size,MultiDocValues.getNumericValues(indexReader, size))
     }
-    val numericDocValues=numericDocValuesMap(name)
+    val numericDocValues=numericDocValuesMap(size)
     if(numericDocValues==null){
       vector.appendNulls(batchDocIds.length)
       return
@@ -313,7 +316,7 @@ class ArrayReader(elementReader:DocValuesColumnarVectorReader) extends DocValues
         vector.appendArray(numElements)
         val arrayVector=vector.arrayData()
         for(j <- 0 until numElements){
-          elementReader.readBatch(indexReader,Array(batchDocIds(i)),s"${name}[$j]",arrayVector)
+          elementReader.readBatch(indexReader,Array(batchDocIds(i)),s"$name[$j]",arrayVector)
         }
       }else{
         vector.appendNull()
