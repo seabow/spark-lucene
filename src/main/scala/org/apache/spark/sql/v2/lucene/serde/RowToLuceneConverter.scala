@@ -2,7 +2,9 @@ package org.apache.spark.sql.v2.lucene.serde
 
 import org.apache.lucene.document._
 import org.apache.lucene.util.{BytesRef, NumericUtils}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
+import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
 import org.apache.spark.sql.connector.catalog.CatalogV2Implicits._
 import org.apache.spark.sql.types._
 
@@ -22,7 +24,7 @@ object RowToLuceneConverter {
       case StringType=>
         new StringConverter
       case MapType(keyType, valueType, _) =>
-        new MapConverter(MultiValueConverter(makeConverter(keyType)), makeConverter(valueType))
+        new MapConverter(makeConverter(keyType), makeConverter(valueType))
       case st:StructType=>
         new StructConverter(st,st.fields.map(f=>makeConverter(f.dataType)))
       case ArrayType(elementType,_)=>
@@ -46,9 +48,9 @@ abstract class RowToLuceneConverter{
     appendIndex(value,name,doc)
     appendDocValues(value,name,doc)
   }
-   def appendIndex(value: Any, name: String, doc: Document): Unit = {throw new UnsupportedOperationException("Not implemented")}
-   def appendDocValues(value: Any, name: String, doc: Document): Unit = {throw new UnsupportedOperationException("Not implemented")}
-   def getValue(row: SpecializedGetters, ordinal: Int): Any = {throw new UnsupportedOperationException("Not implemented")}
+   def appendIndex(value: Any, name: String, doc: Document): Unit
+   def appendDocValues(value: Any, name: String, doc: Document): Unit
+   def getValue(row: SpecializedGetters, ordinal: Int): Any
 }
 
 abstract class NumericBasedConverter extends RowToLuceneConverter{
@@ -145,6 +147,7 @@ object MultiValueConverter{
         new NumericMultiValueConverter(converter)
       case converter:StringConverter=>
         new StringMultiValueConverter(converter)
+      case _=> new ComplexMultiValueConverter(elementConverter)
     }
   }
 }
@@ -174,12 +177,18 @@ class NumericMultiValueConverter(elementConverter:RowToLuceneConverter) extends 
   }
 }
 
+class ComplexMultiValueConverter(elementConverter:RowToLuceneConverter) extends MultiValueConverterBase(elementConverter){
+  override def appendDocValues(value: Any, name: String, doc: Document): Unit = {
+  }
+}
+
 
 /**
  * @param keyConverter
  * @param valueConverter
  */
-class MapConverter(keyConverter:MultiValueConverterBase,valueConverter:RowToLuceneConverter) extends RowToLuceneConverter {
+class MapConverter(keyConverter:RowToLuceneConverter,valueConverter:RowToLuceneConverter) extends RowToLuceneConverter {
+  val multiValueConverter=MultiValueConverter(keyConverter)
   override def append(row: SpecializedGetters, ordinal: Int, name: String, doc: Document): Unit = {
     val map=row.getMap(ordinal)
     val length =map.numElements()
@@ -188,11 +197,40 @@ class MapConverter(keyConverter:MultiValueConverterBase,valueConverter:RowToLuce
     appendSize(length,name,doc)
     for(i<- 0 until length){
       val key= keyConverter.getValue(keys,i)
-      keyConverter.append(keys,i,name, doc)
-      valueConverter.append(values,i,Array(name,key.toString).quoted,doc)
+      val fullKey=Array(name,key.toString).quoted
+      appendFieldName(fullKey,doc)
+      multiValueConverter.append(keys,i,name, doc)
+      if(!values.isNullAt(i))
+      {
+          valueConverter.append(values,i,fullKey,doc)
+      }
     }
   }
 
+  override def appendIndex(value: Any, name: String, doc: Document): Unit = {}
+
+  override def appendDocValues(value: Any, name: String, doc: Document): Unit = {
+    val map=value.asInstanceOf[MapData]
+    val length =map.numElements()
+    val keys =map.keyArray()
+    val values = map.valueArray()
+    appendSize(length,name,doc)
+    for(i<- 0 until length){
+      val key= keyConverter.getValue(keys,i)
+      val fullKey=Array(name,key.toString).quoted
+      appendFieldName(fullKey,doc)
+      multiValueConverter.appendDocValues(key,name,doc)
+      if(!values.isNullAt(i))
+      {
+        val value=valueConverter.getValue(values,i)
+        valueConverter.appendDocValues(value,fullKey,doc)
+      }
+    }
+  }
+
+  override def getValue(row: SpecializedGetters, ordinal: Int): Any = {
+    row.getMap(ordinal)
+  }
 }
 
 class StructConverter(structType:StructType,childConverters:Array[RowToLuceneConverter]) extends RowToLuceneConverter {
@@ -210,10 +248,25 @@ class StructConverter(structType:StructType,childConverters:Array[RowToLuceneCon
      }
   }
 
+  override def appendIndex(value: Any, name: String, doc: Document): Unit = {}
 
-
+  override def appendDocValues(value: Any, name: String, doc: Document): Unit = {
+    val struct=value.asInstanceOf[InternalRow]
+    if(name!=null && name.nonEmpty){
+      appendFieldNameDocValue(name,doc)
+    }
+    for(i<- 0 until childConverters.length) {
+      if(!struct.isNullAt(i)){
+        val childName = Array(name, structType.fields(i).name).quoted
+        childConverters(i).appendDocValues(getValue(struct,i), childName, doc)
+      }
+    }
+  }
+  override def getValue(row: SpecializedGetters, ordinal: Int): Any = {
+     row.getStruct(ordinal,childConverters.length)
+  }
 }
-
+//TODO 由于Array用到了拆开的子方法，所以对所有的都需要处理。
 class ArrayConverter(elementConverter:RowToLuceneConverter) extends RowToLuceneConverter{
   val multiValueConverter=MultiValueConverter(elementConverter)
   override def append(row: SpecializedGetters, ordinal: Int, name: String, doc: Document): Unit = {
@@ -223,11 +276,32 @@ class ArrayConverter(elementConverter:RowToLuceneConverter) extends RowToLuceneC
     while (i < array.numElements()) {
       if (!array.isNullAt(i)) {
         val value=elementConverter.getValue(array,i)
+        //TODO Array<Struct ,Map,Array 均不需要index，因为无法下推>
         elementConverter.appendIndex(value,name,doc)
         elementConverter.appendDocValues(value, s"$name[$i]", doc)
         multiValueConverter.appendDocValues(value,name,doc)
       }
       i += 1
     }
+  }
+
+  override def appendIndex(value: Any, name: String, doc: Document): Unit = {
+  }
+
+  override def appendDocValues(value: Any, name: String, doc: Document): Unit = {
+    val array=value.asInstanceOf[ArrayData]
+    appendSize(array.numElements(),name,doc)
+    var i = 0
+    while (i < array.numElements()) {
+      if (!array.isNullAt(i)) {
+        val value=elementConverter.getValue(array,i)
+        elementConverter.appendDocValues(value, s"$name[$i]", doc)
+      }
+      i += 1
+    }
+  }
+
+  override def getValue(row: SpecializedGetters, ordinal: Int): Any = {
+    row.getArray(ordinal)
   }
 }
