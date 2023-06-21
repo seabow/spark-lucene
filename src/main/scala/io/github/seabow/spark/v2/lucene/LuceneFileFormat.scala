@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.datasources.{FileFormat, OutputWriter, Out
 import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.v2.lucene.LuceneFilters
-import org.apache.spark.sql.v2.lucene.serde.LuceneDeserializer
+import org.apache.spark.sql.v2.lucene.serde.{DocValuesColumnarBatchReader, LuceneDeserializer}
 import org.apache.spark.sql.v2.lucene.util.LuceneUtils
 import org.apache.spark.util.SerializableConfiguration
 
@@ -94,8 +94,31 @@ class LuceneFileFormat extends FileFormat with DataSourceRegister {
       var currentPage = 1
       var pagingCollector = new PagingCollector(currentPage, Int.MaxValue)
       searcher.search(query, pagingCollector)
-      var docIterator = pagingCollector.docs.iterator
-      docIterator.map{doc =>deserializer.deserialize(searcher.doc(doc))}
+      var docs = pagingCollector.docs
+      val vectorizedReader=new DocValuesColumnarBatchReader(
+        false,
+        searcher.getIndexReader,docs.toArray,
+        requiredSchema,
+        partitionSchema,
+        null, capacity = 30000)
+      var iterator=vectorizedReader.columnarBatch.rowIterator()
+      new Iterator[InternalRow] {
+        override def hasNext: Boolean = {
+          iterator.hasNext||
+            { if(vectorizedReader.nextBatch()){
+              iterator=vectorizedReader.columnarBatch.rowIterator()
+              true
+            } else {
+              false
+            }
+            }
+
+        }
+
+        override def next(): InternalRow = {
+          iterator.next()
+        }
+      }
     }
   }
 

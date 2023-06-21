@@ -11,9 +11,7 @@ import org.apache.lucene.document._
 import org.apache.lucene.index.IndexWriterConfig.OpenMode
 import org.apache.lucene.index.{IndexWriter, IndexWriterConfig}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.v2.lucene.serde.avro.StoreFieldAvroWriter
 
 class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Configuration, val options: LuceneOptions) {
   val dirPath=s"$path.dir"
@@ -52,9 +50,6 @@ class LuceneGenerator(val path: String, val dataSchema: StructType, val conf: Co
     }
   }
 
-   val storeFieldAvroWriter=StoreFieldAvroWriter(dataSchema)
-
-  private type ValueConverter = (SpecializedGetters, Int,Document) => Unit
   private val converters:Seq[RowToLuceneConverter]=dataSchema.map(_.dataType).map(RowToLuceneConverter.makeConverter(_))
 
   def write(row: InternalRow): Unit = {

@@ -13,7 +13,11 @@ class FacetAggCollector(agg: Aggregation, aggSchema: StructType, dataSchema: Str
         row =>
           for (k <- 0 until docValues.length) yield {
             val copiedRow = row.copy()
-            groupRowSetters(ordinal)(copiedRow, ordinal, docValues(k))
+            if(docValues(k)!=null){
+              groupRowSetters(ordinal)(copiedRow, ordinal, docValues(k))
+            }else{
+              copiedRow.setNullAt(ordinal)
+            }
             copiedRow
           }
       }

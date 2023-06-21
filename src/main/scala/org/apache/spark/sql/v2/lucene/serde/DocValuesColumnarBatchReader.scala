@@ -51,5 +51,9 @@ class DocValuesColumnarBatchReader(enableOffHeapColumnVector:Boolean
     true
   }
 
+  def close():Unit={
+    columnarBatch.close()
+  }
+
 
 }

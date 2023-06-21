@@ -1,6 +1,6 @@
 package io.github.seabow.spark.v2.lucene.collector
 
-import org.apache.lucene.index.{LeafReader, LeafReaderContext, SortedNumericDocValues, SortedSetDocValues}
+import org.apache.lucene.index.{BinaryDocValues, LeafReader, LeafReaderContext, NumericDocValues, SortedNumericDocValues, SortedSetDocValues}
 import org.apache.lucene.search.{ScoreMode, SimpleCollector}
 import org.apache.lucene.util.NumericUtils
 import org.apache.spark.sql.catalyst.InternalRow
@@ -42,17 +42,17 @@ class AggCollector(agg: Aggregation, aggSchema: StructType, dataSchema: StructTy
   def getSingleDocValues(colName:String,dataType:DataType, doc: Int):Option[Any]={
     dataType match {
       case StringType =>
-        val docValues = docValueMaps(colName).asInstanceOf[SortedSetDocValues]
+        val docValues = docValueMaps(colName).asInstanceOf[BinaryDocValues]
         if (docValues != null && docValues.advanceExact(doc)) {
-          Some(UTF8String.fromString(docValues.lookupOrd(docValues.nextOrd()).utf8ToString()))
+          Some(UTF8String.fromString(docValues.binaryValue().utf8ToString()))
         } else {
           None
         }
       case _ =>
-        val docValues = docValueMaps(colName).asInstanceOf[SortedNumericDocValues]
+        val docValues = docValueMaps(colName).asInstanceOf[NumericDocValues]
         if (docValues != null && docValues.advanceExact(doc)) {
           {
-            Some(docValues.nextValue())
+            Some(docValues.longValue())
           }
         } else {
           None
@@ -61,9 +61,20 @@ class AggCollector(agg: Aggregation, aggSchema: StructType, dataSchema: StructTy
   }
 
   def getMultiDocValues(colName:String,dataType:DataType, doc: Int): Seq[Any] = {
+    var docValuesAny = docValueMaps(colName)
+    if(docValuesAny.isInstanceOf[BinaryDocValues]||docValuesAny.isInstanceOf[NumericDocValues]){
+      val singleValue=getSingleDocValues(colName, dataType, doc)
+      if(singleValue.isDefined)
+        {
+          return Seq(singleValue.get)
+        }else{
+          return Seq.empty
+        }
+    }
+
     dataType match {
       case StringType =>
-        val docValues = docValueMaps(colName).asInstanceOf[SortedSetDocValues]
+        val docValues=docValuesAny.asInstanceOf[SortedSetDocValues]
         if (docValues != null && docValues.advanceExact(doc)) {
           val collection: Iterator[UTF8String] = Iterator.continually(docValues.nextOrd())
             .takeWhile(_ != SortedSetDocValues.NO_MORE_ORDS)
@@ -73,7 +84,7 @@ class AggCollector(agg: Aggregation, aggSchema: StructType, dataSchema: StructTy
           Seq.empty
         }
       case _ =>
-        val docValues = docValueMaps(colName).asInstanceOf[SortedNumericDocValues]
+        val docValues = docValuesAny.asInstanceOf[SortedNumericDocValues]
         if (docValues != null && docValues.advanceExact(doc)) {
           {
             for (j <- 0 until docValues.docValueCount()) yield {
@@ -207,12 +218,12 @@ class AggCollector(agg: Aggregation, aggSchema: StructType, dataSchema: StructTy
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
     currentContext = context
-    docValueMaps = getDocValuesMap(agg, dataSchema, context.reader())
+    docValueMaps = getDocValuesMap(agg, context.reader())
   }
 
   override def scoreMode(): ScoreMode = ScoreMode.COMPLETE_NO_SCORES
 
-  def getDocValuesMap(agg: Aggregation, dataSchema: StructType, reader: LeafReader): Map[String, Any] = {
+  def getDocValuesMap(agg: Aggregation,reader: LeafReader): Map[String, Any] = {
     val groupCols = agg.groupByExpressions().map(V2ColumnUtils.extractV2Column).toSet
     val aggCols = agg.aggregateExpressions().map {
       case max: Max =>
@@ -228,11 +239,16 @@ class AggCollector(agg: Aggregation, aggSchema: StructType, dataSchema: StructTy
       col =>
         col.dataType match {
           case StringType =>
-            (col.name, reader.getSortedSetDocValues(col.name))
+            val binaryDocValues = reader.getBinaryDocValues(col.name)
+            val sortedSetDocValues = reader.getSortedSetDocValues(col.name)
+            val docValues = if (binaryDocValues != null) binaryDocValues else sortedSetDocValues
+            (col.name, docValues)
           case DoubleType | LongType | IntegerType | FloatType|DateType|TimestampType|BooleanType =>
-            (col.name, reader.getSortedNumericDocValues(col.name))
-          case _ =>
-            (col.name, reader.getSortedSetDocValues(col.name))
+            val numericDocValues = reader.getNumericDocValues(col.name)
+            val sortedNumericDocValues = reader.getSortedNumericDocValues(col.name)
+            val docValues = if (numericDocValues != null) numericDocValues else sortedNumericDocValues
+            (col.name, docValues)
+          case _ => throw new UnsupportedOperationException("Unsupported data type!")
         }
     }.toMap
   }
