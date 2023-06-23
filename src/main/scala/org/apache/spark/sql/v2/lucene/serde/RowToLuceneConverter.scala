@@ -131,7 +131,7 @@ class StringConverter extends RowToLuceneConverter{
   }
 
   override def appendDocValues(value: Any, name: String, doc: Document): Unit = {
-    val docValue=new BinaryDocValuesField(name, new BytesRef(value.toString))
+    val docValue=new SortedDocValuesField(name, new BytesRef(value.toString))
     doc.add(docValue)
   }
 

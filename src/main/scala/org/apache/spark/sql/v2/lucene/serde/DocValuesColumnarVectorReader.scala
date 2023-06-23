@@ -134,7 +134,7 @@ class DoubleReader extends NumericValuesReader {
 }
 
 class StringReader extends DocValuesColumnarVectorReader {
-  var binaryDocValuesMap: mutable.Map[String, BinaryDocValues] = mutable.Map.empty
+  var sortedDocValuesMap: mutable.Map[String, SortedDocValues] = mutable.Map.empty
 
   override def readBatch(leafReader: LeafReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
     for (docId <- batchDocIds) {
@@ -153,12 +153,12 @@ class StringReader extends DocValuesColumnarVectorReader {
   }
 
   override def getValue(leafReader: LeafReader, docId: Int, name: String): Option[Any] = {
-    if (!binaryDocValuesMap.contains(name)) {
-      binaryDocValuesMap.put(name, leafReader.getBinaryDocValues( name))
+    if (!sortedDocValuesMap.contains(name)) {
+      sortedDocValuesMap.put(name, leafReader.getSortedDocValues( name))
     }
-    val binaryDocValues = binaryDocValuesMap(name)
-    val value = if (binaryDocValues!=null && binaryDocValues.advanceExact(docId)) {
-      val strValue=binaryDocValues.binaryValue().utf8ToString()
+    val sortedDocValues = sortedDocValuesMap(name)
+    val value = if (sortedDocValues!=null && sortedDocValues.advanceExact(docId)) {
+      val strValue=sortedDocValues.binaryValue().utf8ToString()
       Some(strValue)
     } else {
       None

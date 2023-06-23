@@ -239,9 +239,9 @@ class AggCollector(agg: Aggregation, aggSchema: StructType, dataSchema: StructTy
       col =>
         col.dataType match {
           case StringType =>
-            val binaryDocValues = reader.getBinaryDocValues(col.name)
+            val sortedDocValues = reader.getSortedDocValues(col.name)
             val sortedSetDocValues = reader.getSortedSetDocValues(col.name)
-            val docValues = if (binaryDocValues != null) binaryDocValues else sortedSetDocValues
+            val docValues = if (sortedDocValues != null) sortedDocValues else sortedSetDocValues
             (col.name, docValues)
           case DoubleType | LongType | IntegerType | FloatType|DateType|TimestampType|BooleanType =>
             val numericDocValues = reader.getNumericDocValues(col.name)

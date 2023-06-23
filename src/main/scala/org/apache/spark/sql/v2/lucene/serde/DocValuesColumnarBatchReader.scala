@@ -41,12 +41,14 @@ class DocValuesColumnarBatchReader(enableOffHeapColumnVector:Boolean
     cb
   }
 
-  var vectorReaders:Seq[DocValuesColumnarVectorReader]= readDataSchema.map{
-    f=> DocValuesColumnarVectorReader.makeReader(f.dataType)
-  }
+  var vectorReaders:Seq[DocValuesColumnarVectorReader]= newVectorReaders
 
   var returnedData=0
   var totalCountLoadedSoFar:Int = 0
+
+  def newVectorReaders=readDataSchema.map{
+    f=> DocValuesColumnarVectorReader.makeReader(f.dataType)
+  }
 
   def nextBatch():Boolean={
     vectors.foreach(_.reset())
@@ -79,6 +81,7 @@ class DocValuesColumnarBatchReader(enableOffHeapColumnVector:Boolean
     if (leafReaderStore == null) {
       throw new IOException("expecting more rows but reached last block. Read " + returnedData + " out of " + totalSize)
     }
+    vectorReaders=newVectorReaders
     totalCountLoadedSoFar += leafReaderStore.size
   }
 }

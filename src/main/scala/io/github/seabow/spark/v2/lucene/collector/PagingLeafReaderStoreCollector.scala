@@ -23,7 +23,7 @@ class PagingLeafReaderStoreCollector(page: Int, resultsPerPage: Int) extends Pag
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
     if (docsBuilder != null){
-      leafReaderStores.append(new LeafReaderStore(this.context, docsBuilder.build, size))
+      leafReaderStores.append(LeafReaderStore(this.context, docsBuilder.build, size))
     }
     docsBuilder = new DocIdSetBuilder(context.reader.maxDoc)
     size = 0
