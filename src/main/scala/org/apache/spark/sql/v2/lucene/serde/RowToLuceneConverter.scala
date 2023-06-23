@@ -266,7 +266,7 @@ class StructConverter(structType:StructType,childConverters:Array[RowToLuceneCon
      row.getStruct(ordinal,childConverters.length)
   }
 }
-//TODO 由于Array用到了拆开的子方法，所以对所有的都需要处理。
+
 class ArrayConverter(elementConverter:RowToLuceneConverter) extends RowToLuceneConverter{
   val multiValueConverter=MultiValueConverter(elementConverter)
   override def append(row: SpecializedGetters, ordinal: Int, name: String, doc: Document): Unit = {
@@ -276,10 +276,9 @@ class ArrayConverter(elementConverter:RowToLuceneConverter) extends RowToLuceneC
     while (i < array.numElements()) {
       if (!array.isNullAt(i)) {
         val value=elementConverter.getValue(array,i)
-        //TODO Array<Struct ,Map,Array 均不需要index，因为无法下推>
+        // Array<Struct ,Map,Array 均不需要index，因为无法下推>
         elementConverter.appendIndex(value,name,doc)
         elementConverter.appendDocValues(value, s"$name[$i]", doc)
-        multiValueConverter.appendDocValues(value,name,doc)
       }
       i += 1
     }

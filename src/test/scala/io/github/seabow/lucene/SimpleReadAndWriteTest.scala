@@ -1,6 +1,7 @@
 package io.github.seabow.lucene
 
 import com.github.mrpowers.spark.fast.tests.DatasetComparer
+import io.github.seabow.spark.v2.lucene.LuceneOptions
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.internal.Logging
@@ -62,7 +63,7 @@ class SimpleReadAndWriteTest extends AnyFunSuite with Logging with SparkSessionT
 
   test("writeAndRead"){
      val expectedDF = testDF.orderBy("CustomerID")
-      val actualDF=spark.read.lucene("spark_lucene").orderBy("CustomerID")
+      val actualDF=spark.read.option(LuceneOptions.vectorizedReadCapacity,"110").lucene("spark_lucene").orderBy("CustomerID")
      assertSmallDatasetEquality(actualDF,expectedDF)
   }
 
@@ -122,21 +123,21 @@ class SimpleReadAndWriteTest extends AnyFunSuite with Logging with SparkSessionT
   }
 
   test("facet group by array"){
-    var actualDF=spark.read.option("enforceFacetSchema","true").lucene("spark_lucene").groupBy("ArrayInfo").count().orderBy("ArrayInfo")
-    val expectedDF = testDF.withColumn("ArrayInfo", explode_outer(col("ArrayInfo"))).groupBy("ArrayInfo").count().orderBy("ArrayInfo")
+    var actualDF=spark.read.lucene("spark_lucene").select( explode_outer(col("ArrayInfo")).as("ArrayInfo")).groupBy("ArrayInfo").count().orderBy("ArrayInfo")
+    val expectedDF = testDF.select( explode_outer(col("ArrayInfo")).as("ArrayInfo")).groupBy("ArrayInfo").count().orderBy("ArrayInfo")
     assertSmallDatasetEquality(actualDF,expectedDF)
 
   }
 
   test("facet group by map<x,array>"){
-    val actualDF=spark.read.option("enforceFacetSchema","true").lucene("spark_lucene").groupBy("MapArray.sport").count().orderBy("sport")
-    val expectedDF = testDF.withColumn("sport", explode_outer(col("MapArray.sport"))).groupBy("sport").count().orderBy("sport")
+    val actualDF=spark.read.lucene("spark_lucene").select( explode_outer(col("MapArray.sport")).as("sport")).groupBy("sport").count().orderBy("sport")
+    val expectedDF = testDF.select( explode_outer(col("MapArray.sport")).as("sport")).groupBy("sport").count().orderBy("sport")
     assertSmallDatasetEquality(actualDF,expectedDF)
   }
 
   test("facet group by struct<array>"){
-    val actualDF=spark.read.option("enforceFacetSchema","true").lucene("spark_lucene").groupBy("StructInfo.map_tags").count().orderBy("map_tags")
-    val expectedDF = testDF.withColumn("map_tags", explode_outer(col("StructInfo.map_tags"))).groupBy("map_tags").count().orderBy("map_tags")
+    val actualDF=spark.read.lucene("spark_lucene").select( explode_outer(col("StructInfo.map_tags")).as("map_tags")).groupBy("map_tags").count().orderBy("map_tags")
+    val expectedDF = testDF.select( explode_outer(col("StructInfo.map_tags")).as("map_tags")).groupBy("map_tags").count().orderBy("map_tags")
     assertSmallDatasetEquality(actualDF,expectedDF)
   }
 

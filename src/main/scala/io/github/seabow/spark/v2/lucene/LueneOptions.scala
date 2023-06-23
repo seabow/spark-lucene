@@ -20,6 +20,9 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.internal.SQLConf
 
 import java.util.Locale
+object LuceneOptions{
+  val vectorizedReadCapacity="vectorizedReadCapacity"
+}
 
 class LuceneOptions(@transient val parameters: CaseInsensitiveMap[String],@transient private val sqlConf: SQLConf) extends Serializable {
   def this(parameters: Map[String, String], sqlConf: SQLConf) = {
@@ -52,6 +55,13 @@ class LuceneOptions(@transient val parameters: CaseInsensitiveMap[String],@trans
    * 开启facet schema，将ArrayType[AtomicType]字段映射为 AtomicType
    */
   val enforceFacetSchema = getBool("enforceFacetSchema", default = false)
+
+  /**
+   * column read capacity
+   */
+
+  val vectorizedReadCapacity = getInt("vectorizedReadCapacity").getOrElse(4096)
+
 
   /* Output excel file extension, default to xlsx */
   val fileExtension = parameters.get("fileExtension") match {

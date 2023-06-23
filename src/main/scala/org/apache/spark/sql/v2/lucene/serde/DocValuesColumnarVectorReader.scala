@@ -34,11 +34,11 @@ object DocValuesColumnarVectorReader {
 }
 
 abstract class DocValuesColumnarVectorReader {
-  def readBatch(indexReader: IndexReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
+  def readBatch(leafReader:LeafReader, docs:Array[Int], name: String, vector: WritableColumnVector): Unit = {
     throw new IllegalStateException("Unsupported")
   }
 
-  def getValue(indexReader: IndexReader, docId: Int, name: String): Option[Any] = {
+  def getValue(leafReader:LeafReader, docId: Int, name: String): Option[Any] = {
     throw new IllegalStateException("Unsupported")
   }
 
@@ -55,9 +55,9 @@ abstract class DocValuesColumnarVectorReader {
 abstract class NumericValuesReader extends DocValuesColumnarVectorReader {
   var numericDocValuesMap: mutable.Map[String, NumericDocValues] = mutable.Map.empty
 
-  override def readBatch(indexReader: IndexReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
-    for (docId <- batchDocIds) {
-      val value = getValue(indexReader, docId, name)
+  override def readBatch(leafReader:LeafReader, docs:Array[Int], name: String, vector: WritableColumnVector): Unit = {
+    for (docId <- docs) {
+      val value = getValue(leafReader, docId, name)
       if (value.isDefined) {
         append(value.get, vector)
       } else {
@@ -66,9 +66,9 @@ abstract class NumericValuesReader extends DocValuesColumnarVectorReader {
     }
   }
 
-  override def getValue(indexReader: IndexReader, docId: Int, name: String): Option[Any] = {
+  override def getValue(leafReader:LeafReader, docId: Int, name: String): Option[Any] = {
     if (!numericDocValuesMap.contains(name)) {
-      numericDocValuesMap.put(name, MultiDocValues.getNumericValues(indexReader, name))
+      numericDocValuesMap.put(name, leafReader.getNumericDocValues( name))
     }
     val numericDocValues = numericDocValuesMap(name)
     val value = if (numericDocValues!=null && numericDocValues.advanceExact(docId)) {
@@ -136,9 +136,9 @@ class DoubleReader extends NumericValuesReader {
 class StringReader extends DocValuesColumnarVectorReader {
   var binaryDocValuesMap: mutable.Map[String, BinaryDocValues] = mutable.Map.empty
 
-  override def readBatch(indexReader: IndexReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
+  override def readBatch(leafReader: LeafReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
     for (docId <- batchDocIds) {
-      val value = getValue(indexReader, docId, name)
+      val value = getValue(leafReader, docId, name)
       if (value.isDefined) {
         val valueBytes = value.get.asInstanceOf[String].getBytes()
         vector.appendByteArray(valueBytes, 0, valueBytes.length)
@@ -152,9 +152,9 @@ class StringReader extends DocValuesColumnarVectorReader {
     fromValue
   }
 
-  override def getValue(indexReader: IndexReader, docId: Int, name: String): Option[Any] = {
+  override def getValue(leafReader: LeafReader, docId: Int, name: String): Option[Any] = {
     if (!binaryDocValuesMap.contains(name)) {
-      binaryDocValuesMap.put(name, MultiDocValues.getBinaryValues(indexReader, name))
+      binaryDocValuesMap.put(name, leafReader.getBinaryDocValues( name))
     }
     val binaryDocValues = binaryDocValuesMap(name)
     val value = if (binaryDocValues!=null && binaryDocValues.advanceExact(docId)) {
@@ -176,16 +176,16 @@ class StringReader extends DocValuesColumnarVectorReader {
 class StructReader(structType: StructType, childConverters: Array[DocValuesColumnarVectorReader]) extends DocValuesColumnarVectorReader {
   var binaryDocValuesOption: Option[BinaryDocValues] = None
 
-  override def readBatch(indexReader: IndexReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
+  override def readBatch(leafReader: LeafReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
     if (binaryDocValuesOption.isEmpty) {
-      binaryDocValuesOption = Some(MultiDocValues.getBinaryValues(indexReader, name))
+      binaryDocValuesOption = Some(leafReader.getBinaryDocValues( name))
     }
     val binaryDocValues = binaryDocValuesOption.get
     for (i <- 0 until batchDocIds.length) {
       if (binaryDocValues!=null && binaryDocValues.advanceExact(batchDocIds(i))) {
         vector.appendStruct(false)
         for (j <- 0 until childConverters.length) {
-          childConverters(j).readBatch(indexReader, Array(batchDocIds(i)), Array(name, structType(j).name).quoted, vector.getChild(j))
+          childConverters(j).readBatch(leafReader, Array(batchDocIds(i)), Array(name, structType(j).name).quoted, vector.getChild(j))
         }
       } else {
         vector.appendStruct(true)
@@ -231,15 +231,15 @@ class MultiDocValuesReaderBase(childReader: DocValuesColumnarVectorReader) exten
 class StringMultiValueReader(childReader: DocValuesColumnarVectorReader) extends MultiDocValuesReaderBase(childReader) {
   var sortedSetDocValuesMap: mutable.Map[String, SortedSetDocValues] = mutable.Map.empty
 
-  override def getValue(indexReader: IndexReader, docId: Int, name: String): Option[Any] = {
-    val size=getSize(indexReader, docId, name)
+  override def getValue(leafReader: LeafReader, docId: Int, name: String): Option[Any] = {
+    val size=getSize(leafReader, docId, name)
     if(size.isEmpty){
       return None
     }else if (size.get==0){
       return Some(Seq.empty)
     }
     if (!sortedSetDocValuesMap.contains(name)) {
-      sortedSetDocValuesMap.put(name, MultiDocValues.getSortedSetValues(indexReader, name))
+      sortedSetDocValuesMap.put(name, leafReader.getSortedSetDocValues( name))
     }
     val sortedSetDocValues = sortedSetDocValuesMap(name)
     if (sortedSetDocValues!=null && sortedSetDocValues.advanceExact(docId)) {
@@ -258,15 +258,15 @@ class StringMultiValueReader(childReader: DocValuesColumnarVectorReader) extends
 class NumericMultiValueReader(childReader: DocValuesColumnarVectorReader) extends MultiDocValuesReaderBase(childReader) {
   var sortedNumericDocValuesMap: mutable.Map[String, SortedNumericDocValues] = mutable.Map.empty
 
-  override def getValue(indexReader: IndexReader, docId: Int, name: String): Option[Any] = {
-    val size=getSize(indexReader, docId, name)
+  override def getValue(leafReader: LeafReader, docId: Int, name: String): Option[Any] = {
+    val size=getSize(leafReader, docId, name)
     if(size.isEmpty){
       return None
     }else if (size.get==0){
       return Some(Seq.empty)
     }
     if (!sortedNumericDocValuesMap.contains(name)) {
-      sortedNumericDocValuesMap.put(name, MultiDocValues.getSortedNumericValues(indexReader, name))
+      sortedNumericDocValuesMap.put(name, leafReader.getSortedNumericDocValues( name))
     }
     val sortedNumericDocValues = sortedNumericDocValuesMap(name)
     if (sortedNumericDocValues!=null && sortedNumericDocValues.advanceExact(docId)) {
@@ -282,11 +282,11 @@ class NumericMultiValueReader(childReader: DocValuesColumnarVectorReader) extend
 
 class MapReader(keyReader: DocValuesColumnarVectorReader, valueReader: DocValuesColumnarVectorReader) extends DocValuesColumnarVectorReader {
   val multiDocValuesReader=MultiDocValuesReader(keyReader)
-  override def readBatch(indexReader: IndexReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
+  override def readBatch(leafReader: LeafReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
     val keysVector = vector.getChild(0)
     val valuesVector = vector.getChild(1)
     for (i <- 0 until batchDocIds.length) {
-      val keys = keyReader.getValue(indexReader, batchDocIds(i), name)
+      val keys = keyReader.getValue(leafReader, batchDocIds(i), name)
       if (keys.isDefined) {
         val keySeq = keys.get.asInstanceOf[Seq[Any]]
         val size = keySeq.size
@@ -295,7 +295,7 @@ class MapReader(keyReader: DocValuesColumnarVectorReader, valueReader: DocValues
           key =>
             val keyString=key.toString
             keyReader.append(key, keysVector)
-            valueReader.readBatch(indexReader, Array(batchDocIds(i)), Array(name, keyString).quoted, valuesVector)
+            valueReader.readBatch(leafReader, Array(batchDocIds(i)), Array(name, keyString).quoted, valuesVector)
         }
       } else {
         vector.appendNull()
@@ -308,8 +308,8 @@ class MapReader(keyReader: DocValuesColumnarVectorReader, valueReader: DocValues
 
 class ArrayReader(elementReader:DocValuesColumnarVectorReader) extends DocValuesColumnarVectorReader{
   val multiDocValuesReader=MultiDocValuesReader(elementReader)
-  override def readBatch(indexReader: IndexReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
-    val numericDocValues=multiDocValuesReader.getSizeDocValues(indexReader, name)
+  override def readBatch(leafReader:LeafReader, batchDocIds: Array[Int], name: String, vector: WritableColumnVector): Unit = {
+    val numericDocValues=multiDocValuesReader.getSizeDocValues(leafReader, name)
     if(numericDocValues==null){
       vector.appendNulls(batchDocIds.length)
       return
@@ -321,7 +321,7 @@ class ArrayReader(elementReader:DocValuesColumnarVectorReader) extends DocValues
         vector.appendArray(numElements)
         val arrayVector=vector.arrayData()
         for(j <- 0 until numElements){
-          elementReader.readBatch(indexReader,Array(batchDocIds(i)),s"$name[$j]",arrayVector)
+          elementReader.readBatch(leafReader,Array(batchDocIds(i)),s"$name[$j]",arrayVector)
         }
       }else{
         vector.appendNull()

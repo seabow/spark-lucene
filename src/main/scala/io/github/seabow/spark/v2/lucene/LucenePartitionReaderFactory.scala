@@ -1,6 +1,6 @@
 package io.github.seabow.spark.v2.lucene
 
-import io.github.seabow.spark.v2.lucene.collector.PagingCollector
+import io.github.seabow.spark.v2.lucene.collector.PagingLeafReaderStoreCollector
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.cache.{LuceneCacheAccumulator, LuceneSearcherCache}
@@ -29,6 +29,7 @@ case class LucenePartitionReaderFactory(
 
   private val resultSchema = StructType(readDataSchema.fields ++ partitionSchema.fields)
   private val enableOffHeapColumnVector = sqlConf.offHeapColumnVectorEnabled
+  private val capacity=broadcastedConf.value.value.getInt("vectorizedReadCapacity",4096)
 
 
   override def buildReader(file: PartitionedFile): PartitionReader[InternalRow] = {
@@ -40,15 +41,15 @@ case class LucenePartitionReaderFactory(
    val searcher=LuceneSearcherCache.getSearcherInstance(file.filePath,conf,luceneCacheAccumulator)
     val query = LuceneFilters.createFilter(dataSchema,filters)
     var currentPage=1
-    var pagingCollector=new PagingCollector(currentPage,Int.MaxValue)
+    var pagingCollector=new PagingLeafReaderStoreCollector(currentPage,Int.MaxValue)
     searcher.search(query,pagingCollector)
-    var docs= pagingCollector.docs
+    var leafReaderStores= pagingCollector.getLeafReaderStores
     val vectorizedReader=new DocValuesColumnarBatchReader(
       enableOffHeapColumnVector,
-      searcher.getIndexReader,docs.toArray,
+      searcher.getIndexReader,leafReaderStores,
       readDataSchema,
       partitionSchema,
-      null, capacity = 30000)
+      null, capacity )
 
     val fileReader= new PartitionReader[InternalRow] {
       var rowIterator=vectorizedReader.columnarBatch.rowIterator()
@@ -108,15 +109,15 @@ case class LucenePartitionReaderFactory(
     val query = LuceneFilters.createFilter(dataSchema,filters)
     new PartitionReader[ColumnarBatch] {
       var currentPage=1
-      var pagingCollector=new PagingCollector(currentPage,Int.MaxValue)
+      var pagingCollector=new PagingLeafReaderStoreCollector(currentPage,Int.MaxValue)
       searcher.search(query,pagingCollector)
-      val docs= pagingCollector.docs
+      val leafReaderStores= pagingCollector.getLeafReaderStores
       val vectorizedReader=new DocValuesColumnarBatchReader(
         enableOffHeapColumnVector,
-        searcher.getIndexReader,docs.toArray,
+        searcher.getIndexReader,leafReaderStores,
         readDataSchema,
         partitionSchema,
-        partitionedFile.partitionValues, capacity = 30000)
+        partitionedFile.partitionValues, capacity)
       override def next(): Boolean = vectorizedReader.nextBatch()
 
       override def get(): ColumnarBatch =

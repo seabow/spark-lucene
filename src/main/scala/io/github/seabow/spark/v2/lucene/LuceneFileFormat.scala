@@ -17,7 +17,7 @@
 
 package io.github.seabow.spark.v2.lucene
 
-import io.github.seabow.spark.v2.lucene.collector.PagingCollector
+import io.github.seabow.spark.v2.lucene.collector.PagingLeafReaderStoreCollector
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.datasources.{FileFormat, OutputWriter, Out
 import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.v2.lucene.LuceneFilters
-import org.apache.spark.sql.v2.lucene.serde.{DocValuesColumnarBatchReader, LuceneDeserializer}
+import org.apache.spark.sql.v2.lucene.serde.DocValuesColumnarBatchReader
 import org.apache.spark.sql.v2.lucene.util.LuceneUtils
 import org.apache.spark.util.SerializableConfiguration
 
@@ -90,14 +90,13 @@ class LuceneFileFormat extends FileFormat with DataSourceRegister {
       val conf = broadcastedConf.value.value
       val searcher = LuceneSearcherCache.getSearcherInstance(file.filePath, conf,luceneCacheAccumulator)
       val query = LuceneFilters.createFilter(dataSchema, filters)
-      val deserializer = new LuceneDeserializer(dataSchema, requiredSchema,searcher.getIndexReader)
       var currentPage = 1
-      var pagingCollector = new PagingCollector(currentPage, Int.MaxValue)
+      var pagingCollector = new PagingLeafReaderStoreCollector(currentPage, Int.MaxValue)
       searcher.search(query, pagingCollector)
-      var docs = pagingCollector.docs
+      var leafReaderStores = pagingCollector.getLeafReaderStores
       val vectorizedReader=new DocValuesColumnarBatchReader(
         false,
-        searcher.getIndexReader,docs.toArray,
+        searcher.getIndexReader,leafReaderStores,
         requiredSchema,
         partitionSchema,
         null, capacity = 30000)
