@@ -147,11 +147,11 @@ class SimpleReadAndWriteTest extends AnyFunSuite with Logging with SparkSessionT
   }
 
 
-  override def beforeAll(){
-     println("beforeAll")
-    clearData
-    testDF.write.mode("overwrite").partitionBy("ImpDay").lucene("spark_lucene")
-  }
+//  override def beforeAll(){
+//     println("beforeAll")
+//    clearData
+//    testDF.write.mode("overwrite").partitionBy("ImpDay").lucene("spark_lucene")
+//  }
 
   override def afterAll(): Unit ={
     println("afterAll")

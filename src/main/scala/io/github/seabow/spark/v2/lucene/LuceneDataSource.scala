@@ -1,6 +1,7 @@
 package io.github.seabow.spark.v2.lucene
 
 import org.apache.spark.sql.connector.catalog.Table
+import org.apache.spark.sql.execution.datasource.lucene.LuceneFileFormat
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.types.StructType

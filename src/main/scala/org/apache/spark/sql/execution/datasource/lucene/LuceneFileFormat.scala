@@ -15,15 +15,17 @@
  * limitations under the License.
  */
 
-package io.github.seabow.spark.v2.lucene
+package org.apache.spark.sql.execution.datasource.lucene
 
 import io.github.seabow.spark.v2.lucene.collector.PagingLeafReaderStoreCollector
+import io.github.seabow.spark.v2.lucene.{LuceneOptions, LuceneOutputWriter}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.spark.cache.LuceneSearcherCache
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.execution.datasources.{FileFormat, OutputWriter, OutputWriterFactory, PartitionedFile}
 import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
 import org.apache.spark.sql.types._
@@ -31,6 +33,8 @@ import org.apache.spark.sql.v2.lucene.LuceneFilters
 import org.apache.spark.sql.v2.lucene.serde.DocValuesColumnarBatchReader
 import org.apache.spark.sql.v2.lucene.util.LuceneUtils
 import org.apache.spark.util.SerializableConfiguration
+
+import scala.collection.convert.ImplicitConversions._
 
 /** derived from binary file data source. Needed to support writing Lucene using the V2 API
  */
@@ -85,7 +89,6 @@ class LuceneFileFormat extends FileFormat with DataSourceRegister {
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
     }
     val luceneCacheAccumulator=LuceneSearcherCache.registerLuceneCacheAccumulatorInstances(sparkSession)
-
     (file: PartitionedFile) => {
       val conf = broadcastedConf.value.value
       val searcher = LuceneSearcherCache.getSearcherInstance(file.filePath, conf,luceneCacheAccumulator)
@@ -100,12 +103,22 @@ class LuceneFileFormat extends FileFormat with DataSourceRegister {
         requiredSchema,
         partitionSchema,
         null, capacity = 30000)
-      var iterator=vectorizedReader.columnarBatch.rowIterator()
+
+      val fullSchema = requiredSchema.toAttributes ++ partitionSchema.toAttributes
+      val unsafeProjection = GenerateUnsafeProjection.generate(fullSchema, fullSchema)
+
+      var iterator=vectorizedReader.columnarBatch.rowIterator().map{
+        row=>
+          unsafeProjection(row)
+      }
       new Iterator[InternalRow] {
         override def hasNext: Boolean = {
           iterator.hasNext||
             { if(vectorizedReader.nextBatch()){
-              iterator=vectorizedReader.columnarBatch.rowIterator()
+              iterator=vectorizedReader.columnarBatch.rowIterator().map{
+                row=>
+                  unsafeProjection(row)
+              }
               true
             } else {
               false

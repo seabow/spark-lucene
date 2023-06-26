@@ -99,7 +99,6 @@ public class HdfsDirectory extends BaseDirectory {
             IOUtils.closeQuietly(fileSystem);
             throw new RuntimeException("Problem creating directory: " + hdfsDirPath, e);
         }
-        log.warn("HDFS support in Solr has been deprecated as of 8.6. See SOLR-14021 for details.");
     }
 
     @Override
